@@ -1,40 +1,79 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 
-# Title
-st.title('Energy Consumption Prediction')
-st.write('This app loads a trained linear regression model and displays a scatter plot of actual vs predicted energy consumption.')
+# ----------------------------
+# Page settings
+# ----------------------------
+st.title("Energy Consumption Prediction")
+st.write(
+    "Бул тиркеме колдонуучу киргизген маалымат боюнча "
+    "energy consumption маанисин божомолдойт."
+)
 
+# ----------------------------
 # Load model
-model = joblib.load('energy_model.pkl')
+# ----------------------------
+model = joblib.load("energy_model.pkl")
 
-# Load test data
-test_df = pd.read_csv('test_energy_data.csv')
+# ----------------------------
+# Feature names
+# Model кандай feature'лерди күтөрүн автоматтык алабыз
+# ----------------------------
+if hasattr(model, "feature_names_in_"):
+    feature_names = list(model.feature_names_in_)
+else:
+    st.error(
+        "Модель feature_names_in_ маалыматын сактабаптыр. "
+        "Feature аттарын кол менен жазыш керек."
+    )
+    st.stop()
 
-target = 'Energy Consumption'
-X_test = test_df.drop(columns=[target])
-y_test = test_df[target]
+# ----------------------------
+# Session state for history
+# ----------------------------
+if "prediction_history" not in st.session_state:
+    st.session_state.prediction_history = []
 
+# ----------------------------
+# User input form
+# ----------------------------
+st.subheader("Маалыматтарды киргизиңиз")
+
+user_input = {}
+
+with st.form("prediction_form"):
+    for feature in feature_names:
+        user_input[feature] = st.number_input(
+            label=feature,
+            value=0.0,
+            step=0.1,
+            format="%.4f"
+        )
+
+    predict_button = st.form_submit_button("Predict")
+
+# ----------------------------
 # Predict
-y_pred = model.predict(X_test)
+# ----------------------------
+if predict_button:
+    input_df = pd.DataFrame([user_input])
 
-# Create scatter plot
-fig, ax = plt.subplots(figsize=(8, 6))
-ax.scatter(y_test, y_pred)
-ax.set_xlabel('Actual Energy Consumption')
-ax.set_ylabel('Predicted Energy Consumption')
-ax.set_title('Actual vs Predicted')
-ax.grid(True)
+    prediction = model.predict(input_df)[0]
 
-# Display plot in Streamlit
-st.pyplot(fig)
+    st.success(f"Predicted Energy Consumption: {prediction:.4f}")
 
-# Optionally show a table of first few predictions
-results = pd.DataFrame({
-    'Actual': y_test,
-    'Predicted': y_pred
-})
-st.subheader('Sample Predictions')
-st.write(results.head())
+    # History'ге сактайбыз
+    record = user_input.copy()
+    record["Predicted Energy Consumption"] = prediction
+
+    st.session_state.prediction_history.append(record)
+
+# ----------------------------
+# Show last 10 results
+# ----------------------------
+if st.session_state.prediction_history:
+    history_df = pd.DataFrame(st.session_state.prediction_history)
+
+    st.subheader("Акыркы 10 prediction")
+    st.write(history_df.tail(10).reset_index(drop=True))
