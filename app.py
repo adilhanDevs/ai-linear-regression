@@ -37,36 +37,64 @@ results = pd.DataFrame({
     'Predicted': y_pred
 })
 
-st.subheader('Sample Predictions')
-st.write(results.head())
+# Покажем пример 10 записей из исходного датасета (все поля) — это полезно, чтобы пользователи видели формат данных
+st.subheader('Dataset')
+st.write(test_df.head(10))
+
+
 
 # -----------------------------
 # USER INPUT SECTION (at bottom)
 # -----------------------------
 st.subheader('Enter New Data for Prediction')
 
-# Колдонуучу киргизе турган input талаалар
+# Подготовим поля ввода: для числовых колонок - number_input, для категориальных - selectbox или text_input
 user_input = {}
 
 for col in X_test.columns:
-    user_input[col] = st.number_input(
-        f'Enter {col}',
-        value=float(X_test[col].iloc[0]) if pd.api.types.is_numeric_dtype(X_test[col]) else 0.0
-    )
+    col_series = X_test[col]
+    # Числовая колонка
+    if pd.api.types.is_numeric_dtype(col_series):
+        non_na = col_series.dropna()
+        # определим, является ли колонка целочисленной (int dtype или все значения без дробной части)
+        is_int_like = pd.api.types.is_integer_dtype(col_series) or (
+            (not non_na.empty) and ((non_na % 1 == 0).all())
+        )
+
+        if is_int_like:
+            default = int(non_na.iloc[0]) if not non_na.empty else 0
+            user_input[col] = st.number_input(f'Enter {col}', value=default, step=1)
+        else:
+            default = float(non_na.iloc[0]) if not non_na.empty else 0.0
+            user_input[col] = st.number_input(f'Enter {col}', value=default, format='%.4f')
+    else:
+        # Категориальная / текстовая колонка: если небольшое число уникальных значений — показываем selectbox
+        unique_vals = col_series.dropna().unique().tolist()
+        unique_vals_str = [str(v) for v in unique_vals]
+        if 0 < len(unique_vals_str) <= 50:
+            # используем selectbox с первым элементом по умолчанию
+            user_input[col] = st.selectbox(f'Enter {col}', options=unique_vals_str, index=0)
+        else:
+            # много уникальных значений или пусто — даём текстовое поле
+            user_input[col] = st.text_input(f'Enter {col}', value=unique_vals_str[0] if unique_vals_str else '')
 
 # Predict button
 if st.button('Predict'):
+    # Собираем входной DataFrame и приводим типы числовых колонок
     input_df = pd.DataFrame([user_input])
-    user_prediction = model.predict(input_df)[0]
 
-    st.success(f'Predicted Energy Consumption: {user_prediction:.4f}')
+    for col in X_test.columns:
+        if pd.api.types.is_numeric_dtype(X_test[col]):
+            # преобразуем вход в числовой тип
+            input_df[col] = pd.to_numeric(input_df[col], errors='coerce')
 
-    # Жаңы prediction'ды results таблицасына кошобуз
-    new_row = {'Actual': None, 'Predicted': user_prediction}
-    results = pd.concat([results, pd.DataFrame([new_row])], ignore_index=True)
+    # Предсказание
+    try:
+        user_prediction = model.predict(input_df)[0]
+        st.success(f'Predicted Energy Consumption: {user_prediction:.4f}')
 
-    st.subheader('Last 10 Results')
-    st.write(results.tail(10))
-else:
-    st.subheader('Last 10 Results')
-    st.write(results.tail(10))
+        # Добавим новую строку в таблицу результатов (Actual нет для пользовательского ввода)
+        new_row = {'Actual': None, 'Predicted': user_prediction}
+        results = pd.concat([results, pd.DataFrame([new_row])], ignore_index=True)
+    except Exception as e:
+        st.error(f'Ошибка при предсказании: {e}')
